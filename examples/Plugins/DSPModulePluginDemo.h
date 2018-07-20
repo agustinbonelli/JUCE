@@ -25,7 +25,7 @@
 
  name:             DSPModulePluginDemo
  version:          1.0.0
- vendor:           juce
+ vendor:           JUCE
  website:          http://juce.com
  description:      Audio plugin using the DSP module.
 
@@ -267,14 +267,21 @@ public:
 
         if (type != currentType)
         {
-            cabinetType.set(type);
+            cabinetType.set (type);
 
             auto maxSize = static_cast<size_t> (roundToInt (getSampleRate() * (8192.0 / 44100.0)));
+            auto assetName = (type == 0 ? "Impulse1.wav" : "Impulse2.wav");
 
-            if (type == 0)
-                convolution.loadImpulseResponse (getAssetsDirectory().getChildFile ("Impulse1.wav"), false, true, maxSize);
-            else
-                convolution.loadImpulseResponse (getAssetsDirectory().getChildFile ("Impulse2.wav"), false, true, maxSize);
+            std::unique_ptr<InputStream> assetInputStream (createAssetInputStream (assetName));
+
+            if (assetInputStream != nullptr)
+            {
+                currentCabinetData.reset();
+                assetInputStream->readIntoMemoryBlock (currentCabinetData);
+
+                convolution.loadImpulseResponse (currentCabinetData.getData(), currentCabinetData.getSize(),
+                                                 false, true, maxSize);
+            }
         }
 
         cabinetIsBypassed = ! cabinetSimParam->get();
@@ -472,7 +479,7 @@ private:
         //==============================================================================
         DspModulePluginDemoAudioProcessor& processor;
 
-        ScopedPointer<ParameterSlider> inputVolumeSlider, outputVolumeSlider,
+        std::unique_ptr<ParameterSlider> inputVolumeSlider, outputVolumeSlider,
                                          lowPassFilterFreqSlider, highPassFilterFreqSlider;
         ComboBox stereoBox, slopeBox, waveshaperBox, cabinetTypeBox;
         ToggleButton cabinetSimButton, oversamplingButton;
@@ -541,6 +548,7 @@ private:
     //==============================================================================
     dsp::ProcessorDuplicator<dsp::IIR::Filter<float>, dsp::IIR::Coefficients<float>> lowPassFilter, highPassFilter;
     dsp::Convolution convolution;
+    MemoryBlock currentCabinetData;
 
     static constexpr size_t numWaveShapers = 2;
     dsp::WaveShaper<float> waveShapers[numWaveShapers];
@@ -548,7 +556,7 @@ private:
 
     dsp::Gain<float> inputVolume, outputVolume;
 
-    ScopedPointer<dsp::Oversampling<float>> oversampling;
+    std::unique_ptr<dsp::Oversampling<float>> oversampling;
     bool audioCurrentlyOversampled = false;
 
     Atomic<int> cabinetType;

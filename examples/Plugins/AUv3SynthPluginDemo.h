@@ -25,7 +25,7 @@
 
  name:             AUv3SynthPlugin
  version:          1.0.0
- vendor:           juce
+ vendor:           JUCE
  website:          http://juce.com
  description:      AUv3 synthesiser audio plugin.
 
@@ -193,15 +193,18 @@ public:
         roomSizeSlider.setRange (0.0, 1.0);
         addAndMakeVisible (roomSizeSlider);
 
-        auto* fileStream = getAssetsDirectory().getChildFile ("proaudio.path").createInputStream();
+        if (auto* assetStream = createAssetInputStream ("proaudio.path"))
+        {
+            std::unique_ptr<InputStream> fileStream (assetStream);
 
-        Path proAudioPath;
-        proAudioPath.loadPathFromStream (*fileStream);
-        proAudioIcon.setPath (proAudioPath);
-        addAndMakeVisible (proAudioIcon);
+            Path proAudioPath;
+            proAudioPath.loadPathFromStream (*fileStream);
+            proAudioIcon.setPath (proAudioPath);
+            addAndMakeVisible (proAudioIcon);
 
-        auto proAudioIconColour = findColour (TextButton::buttonOnColourId);
-        proAudioIcon.setFill (FillType (proAudioIconColour));
+            auto proAudioIconColour = findColour (TextButton::buttonOnColourId);
+            proAudioIcon.setFill (FillType (proAudioIconColour));
+        }
 
         setSize (600, 400);
         startTimer (100);
@@ -314,13 +317,13 @@ public:
         for (auto i = 0; i < maxNumVoices; ++i)
             synth.addVoice (new SamplerVoice());
 
-        loadNewSampleFile (getAssetsDirectory().getChildFile ("singing.ogg"), "ogg");
+        loadNewSample (createAssetInputStream ("singing.ogg"), "ogg");
     }
 
     //==============================================================================
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override
     {
-        return (layouts.getMainOutputChannels() == 2);
+        return (layouts.getMainOutputChannels() <= 2);
     }
 
     void prepareToPlay (double sampleRate, int estimatedMaxSizeOfBuffer) override
@@ -410,15 +413,9 @@ private:
         loadNewSample (soundBuffer, format);
     }
 
-    void loadNewSampleFile (const File& sampleFile, const char* format)
-    {
-        auto* soundBuffer = sampleFile.createInputStream();
-        loadNewSample (soundBuffer, format);
-    }
-
     void loadNewSample (InputStream* soundBuffer, const char* format)
     {
-        ScopedPointer<AudioFormatReader> formatReader (formatManager.findFormatForFileExtension (format)->createReaderFor (soundBuffer, true));
+        std::unique_ptr<AudioFormatReader> formatReader (formatManager.findFormatForFileExtension (format)->createReaderFor (soundBuffer, true));
 
         BigInteger midiNotes;
         midiNotes.setRange (0, 126, true);
@@ -434,7 +431,7 @@ private:
         auto* stream = new MemoryOutputStream (mb, true);
 
         {
-            ScopedPointer<AudioFormatWriter> writer (formatManager.findFormatForFileExtension ("wav")->createWriterFor (stream, lastSampleRate, 1, 16,
+            std::unique_ptr<AudioFormatWriter> writer (formatManager.findFormatForFileExtension ("wav")->createWriterFor (stream, lastSampleRate, 1, 16,
                                                                                                                           StringPairArray(), 0));
             writer->writeFromAudioSampleBuffer (currentRecording, 0, currentRecording.getNumSamples());
             writer->flush();

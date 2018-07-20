@@ -60,7 +60,7 @@ MainWindow::MainWindow()
     {
         commandManager.getKeyMappings()->resetToDefaultMappings();
 
-        ScopedPointer<XmlElement> keys (getGlobalProperties().getXmlValue ("keyMappings"));
+        std::unique_ptr<XmlElement> keys (getGlobalProperties().getXmlValue ("keyMappings"));
 
         if (keys != nullptr)
             commandManager.getKeyMappings()->restoreFromXml (*keys);
@@ -142,7 +142,7 @@ void MainWindow::closeButtonPressed()
 
 bool MainWindow::closeProject (Project* project, bool askUserToSave)
 {
-    jassert (project == currentProject && project != nullptr);
+    jassert (project == currentProject.get() && project != nullptr);
 
     if (project == nullptr)
         return true;
@@ -177,7 +177,7 @@ void MainWindow::moveProject (File newProjectFileToOpen)
 {
     auto openInIDE = currentProject->shouldOpenInIDEAfterSaving();
 
-    closeProject (currentProject, false);
+    closeProject (currentProject.get(), false);
     openFile (newProjectFileToOpen);
 
     if (currentProject != nullptr)
@@ -234,7 +234,7 @@ bool MainWindow::openFile (const File& file)
 
     if (file.hasFileExtension (Project::projectFileExtension))
     {
-        ScopedPointer<Project> newDoc (new Project (file));
+        std::unique_ptr<Project> newDoc (new Project (file));
 
         auto result = newDoc->loadFrom (file, true);
 
@@ -291,7 +291,7 @@ bool MainWindow::tryToOpenPIP (const File& pipFile)
     if (! ProjucerApplication::getApp().mainWindowList.openFile (generator.getJucerFile()))
         return false;
 
-    openPIP (generator, pipFile.getFileName());
+    openPIP (generator);
     return true;
 }
 
@@ -361,7 +361,7 @@ static int findBestLineToScrollTo (StringArray lines, StringRef className)
     return 0;
 }
 
-void MainWindow::openPIP (PIPGenerator& generator, StringRef fileName)
+void MainWindow::openPIP (PIPGenerator& generator)
 {
     if (auto* window = ProjucerApplication::getApp().mainWindowList.getMainWindowForFile (generator.getJucerFile()))
     {
@@ -378,7 +378,7 @@ void MainWindow::openPIP (PIPGenerator& generator, StringRef fileName)
                 pcc->invokeDirectly (CommandIDs::buildNow, true);
                 pcc->invokeDirectly (CommandIDs::toggleContinuousBuild, true);
 
-                auto fileToDisplay = project->getSourceFilesFolder().getChildFile (fileName);
+                auto fileToDisplay = generator.getPIPFile();
 
                 if (fileToDisplay != File())
                 {
@@ -584,12 +584,12 @@ bool MainWindow::perform (const InvocationInfo& info)
     return true;
 }
 
-void MainWindow::valueChanged (Value& v)
+void MainWindow::valueChanged (Value&)
 {
-    if (v == Value())
-        setName ("Projucer");
+    if (currentProject != nullptr)
+        setName (currentProject->getProjectNameString() + " - Projucer");
     else
-        setName (projectNameValue.toString() + " - Projucer");
+        setName ("Projucer");
 }
 
 //==============================================================================

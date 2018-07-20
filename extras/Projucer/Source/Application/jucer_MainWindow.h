@@ -78,14 +78,14 @@ public:
     bool shouldDropFilesWhenDraggedExternally (const DragAndDropTarget::SourceDetails& sourceDetails,
                                                StringArray& files, bool& canMoveFiles) override;
 private:
-    ScopedPointer<Project> currentProject;
+    std::unique_ptr<Project> currentProject;
     Value projectNameValue;
 
     static const char* getProjectWindowPosName()   { return "projectWindowPos"; }
     void createProjectContentCompIfNeeded();
     void setTitleBarIcon();
 
-    void openPIP (PIPGenerator&, StringRef fileName);
+    void openPIP (PIPGenerator&);
 
     void valueChanged (Value&) override;
 
