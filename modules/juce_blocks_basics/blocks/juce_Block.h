@@ -33,7 +33,7 @@ class Block   : public juce::ReferenceCountedObject
 public:
     //==============================================================================
     /** Destructor. */
-    virtual ~Block();
+    ~Block() override;
 
     /** The different block types.
         @see Block::getType()
@@ -88,6 +88,12 @@ public:
     */
     virtual Type getType() const = 0;
 
+    /** Returns true if this a control block. **/
+    bool isControlBlock() const;
+
+    /** Returns true if Block::Type is a control block. */
+    static bool isControlBlock (Block::Type);
+
     /** Returns a human-readable description of this device type. */
     virtual juce::String getDeviceDescription() const = 0;
 
@@ -108,6 +114,9 @@ public:
     */
     virtual bool isMasterBlock() const = 0;
 
+    /** Returns the UID of the master block this block is connected to. */
+    virtual UID getConnectedMasterUID() const = 0;
+
     //==============================================================================
     /** Returns the width of the device in logical device units. */
     virtual int getWidth() const = 0;
@@ -120,6 +129,17 @@ public:
 
     /** Returns the length of one logical device unit as physical millimeters. */
     virtual float getMillimetersPerUnit() const = 0;
+
+    /** A simple struct representing the area of a block. */
+    struct BlockArea  { int x, y, width, height; };
+
+    /** Returns the area that this block covers within the layout of the group as a whole.
+        The coordinates are in logical block units, and are relative to the origin, which is the master block's top-left corner.
+     */
+    virtual BlockArea getBlockAreaWithinLayout() const = 0;
+
+    /** Returns the rotation of this block relative to the master block in 90 degree steps clockwise. */
+    virtual int getRotation() const = 0;
 
     //==============================================================================
     /** If this block has a grid of LEDs, this will return an object to control it.
@@ -134,7 +154,7 @@ public:
         neither delete it or use it after the lifetime of this Block object has finished.
         If there are no LEDs, then this method will return nullptr.
     */
-    virtual LEDRow* getLEDRow() const = 0;
+    virtual LEDRow* getLEDRow() = 0;
 
     /** If this block has any status LEDs, this will return an array of objects to control them.
         Note that the objects in the array belong to this Block object, and the caller must
@@ -204,6 +224,9 @@ public:
         /** Returns the LittleFoot program to execute on the BLOCKS device. */
         virtual juce::String getLittleFootProgram() = 0;
 
+        /** Returns an array of search paths to use when resolving includes. **/
+        virtual juce::Array<juce::File> getSearchPaths() { return {}; }
+
         Block& block;
     };
 
@@ -240,7 +263,7 @@ public:
     /** Interface for objects listening to custom program events. */
     struct ProgramEventListener
     {
-        virtual ~ProgramEventListener() {}
+        virtual ~ProgramEventListener() = default;
 
         /** Called whenever a message from a block is received. */
         virtual void handleProgramEvent (Block& source, const ProgramEventMessage&) = 0;
@@ -253,8 +276,11 @@ public:
     virtual void removeProgramEventListener (ProgramEventListener*);
 
     //==============================================================================
-    /** Returns the size of the data block that setDataByte and other functions can write to. */
+    /** Returns the overall memory of the block. */
     virtual uint32 getMemorySize() = 0;
+
+    /** Returns the size of the data block that setDataByte and other functions can write to. */
+    virtual uint32 getHeapMemorySize() = 0;
 
     /** Sets a single byte on the littlefoot heap. */
     virtual void setDataByte (size_t offset, uint8 value) = 0;
@@ -277,7 +303,16 @@ public:
     {
         static constexpr int32 numOptionNames = 8;
 
-        ConfigMetaData() {}
+        enum class ConfigType
+        {
+            integer,
+            floating,
+            boolean,
+            colour,
+            options
+        };
+
+        ConfigMetaData() = default;
 
         // Constructor to work around VS2015 bugs...
         ConfigMetaData (uint32 itemIndex,
@@ -285,7 +320,7 @@ public:
                         juce::Range<int32> rangeToUse,
                         bool active,
                         const char* itemName,
-                        uint32 itemType,
+                        ConfigType itemType,
                         const char* options[ConfigMetaData::numOptionNames],
                         const char* groupName)
           : item (itemIndex),
@@ -348,7 +383,7 @@ public:
         juce::Range<int32> range;
         bool isActive = false;
         juce::String name;
-        uint32 type = 0;
+        ConfigType type = ConfigType::integer;
         juce::String optionNames[numOptionNames] = {};
         juce::String group;
     };
@@ -403,11 +438,14 @@ public:
     /** Provides a callback that will be called when a config changes. */
     virtual void setConfigChangedCallback (std::function<void(Block&, const ConfigMetaData&, uint32)>) = 0;
 
+    /** Provides a callback that will be called when a prgoram has been loaded. */
+    virtual void setProgramLoadedCallback (std::function<void(Block&)> programLoaded) = 0;
+
     //==============================================================================
     /** Interface for objects listening to input data port. */
     struct DataInputPortListener
     {
-        virtual ~DataInputPortListener() {}
+        virtual ~DataInputPortListener() = default;
 
         /** Called whenever a message from a block is received. */
         virtual void handleIncomingDataPortMessage (Block& source, const void* messageData, size_t messageSize) = 0;

@@ -56,7 +56,7 @@ public:
     explicit Viewport (const String& componentName = String());
 
     /** Destructor. */
-    ~Viewport();
+    ~Viewport() override;
 
     //==============================================================================
     /** Sets the component that this viewport will contain and scroll around.
@@ -81,7 +81,7 @@ public:
 
         @see setViewedComponent
     */
-    Component* getViewedComponent() const noexcept                  { return contentComp; }
+    Component* getViewedComponent() const noexcept                  { return contentComp.get(); }
 
     //==============================================================================
     /** Changes the position of the viewed component.
@@ -322,8 +322,6 @@ private:
     bool vScrollbarRight = true, hScrollbarBottom = true;
 
     struct DragToScrollListener;
-    friend struct DragToScrollListener;
-    friend struct ContainerDeletePolicy<DragToScrollListener>;
     std::unique_ptr<DragToScrollListener> dragToScrollListener;
 
     Point<int> viewportPosToCompPos (Point<int>) const;

@@ -51,8 +51,8 @@ enum class MessageFromDevice
     firmwareUpdateACK       = 0x03,
     deviceTopologyExtend    = 0x04,
     deviceTopologyEnd       = 0x05,
-    deviceVersionList       = 0x06,
-    deviceNameList          = 0x07,
+    deviceVersion           = 0x06,
+    deviceName              = 0x07,
 
     touchStart              = 0x10,
     touchMove               = 0x11,
@@ -153,26 +153,46 @@ struct BlockSerialNumber
     bool hasPrefix (const char* prefix) const noexcept  { return memcmp (serial, prefix, 3) == 0; }
 };
 
-/** Structure for the version number
+//==============================================================================
+/** Structure for generic block data
 
     @tags{Blocks}
-*/
-struct VersionNumber
+ */
+template <size_t MaxSize>
+struct BlockStringData
 {
-    uint8 version[21] = {};
+    uint8 data[MaxSize] = {};
     uint8 length = 0;
+
+    static const size_t maxLength { MaxSize };
+
+    bool isNotEmpty() const
+    {
+        return length > 0;
+    }
+
+    bool operator== (const BlockStringData& other) const
+    {
+        if (length != other.length)
+            return false;
+
+        for (int i = 0; i < length; ++i)
+            if (data[i] != other.data[i])
+                return false;
+
+        return true;
+    }
+
+    bool operator!= (const BlockStringData& other) const
+    {
+        return ! ( *this == other );
+    }
 };
 
-/** Structure for the block name
+using VersionNumber = BlockStringData<21>;
+using BlockName = BlockStringData<33>;
 
-    @tags{Blocks}
-*/
-struct BlockName
-{
-    uint8 name[33] = {};
-    uint8 length = 0;
-};
-
+//==============================================================================
 /** Structure for the device status
 
     @tags{Blocks}
@@ -185,6 +205,7 @@ struct DeviceStatus
     BatteryCharging batteryCharging;
 };
 
+//==============================================================================
 /** Structure for the device connection
 
     @tags{Blocks}
@@ -195,6 +216,7 @@ struct DeviceConnection
     ConnectorPort port1, port2;
 };
 
+//==============================================================================
 /** Structure for the device version
 
     @tags{Blocks}
@@ -205,6 +227,7 @@ struct DeviceVersion
     VersionNumber version;
 };
 
+//==============================================================================
 /** Structure used for the device name
 
     @tags{Blocks}
@@ -232,6 +255,8 @@ enum ConfigItemId
     slideCC             = 6,
     slideMode           = 7,
     octaveTopology      = 8,
+    midiChannelRange    = 9,
+    MPEZone             = 40,
     // Touch
     velocitySensitivity = 10,
     glideSensitivity    = 11,
@@ -363,7 +388,8 @@ enum ConfigCommands
     updateUserConfig            = 0x05, // As above but contains user config metadata
     setConfigState              = 0x06, // Set config activation state and whether it is saved in flash
     factorySyncEnd              = 0x07,
-    clusterConfigSync           = 0x08
+    clusterConfigSync           = 0x08,
+    factorySyncReset            = 0x09
 };
 
 using ConfigCommand = IntegerWithBitSize<4>;

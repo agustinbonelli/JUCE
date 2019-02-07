@@ -849,7 +849,7 @@ namespace AAXClasses
         AAX_Result GetParameterNumberofSteps (AAX_CParamID paramID, int32_t* result) const
         {
             if (auto* param = getParameterFromID (paramID))
-                *result = param->getNumSteps();
+                *result = getSafeNumberOfParameterSteps (*param);
 
             return AAX_SUCCESS;
         }
@@ -1091,7 +1091,9 @@ namespace AAXClasses
                 }
             }
             else
+            {
                 isSuspended = true;
+            }
 
             if (isSuspended)
             {
@@ -1405,6 +1407,14 @@ namespace AAXClasses
             return false;
         }
 
+        // Some older Pro Tools control surfaces (EUCON [PT version 12.4] and
+        // Avid S6 before version 2.1) cannot cope with a large number of
+        // parameter steps.
+        static int32_t getSafeNumberOfParameterSteps (const AudioProcessorParameter& param)
+        {
+            return jmax (param.getNumSteps(), 2048);
+        }
+
         void addAudioProcessorParameters()
         {
             auto& audioProcessor = getPluginInstance();
@@ -1446,7 +1456,6 @@ namespace AAXClasses
                 aaxParamIDs.add (paramID);
                 auto aaxParamID = aaxParamIDs.getReference (parameterIndex++).getCharPointer();
 
-
                 paramMap.set (AAXClasses::getAAXParamHash (aaxParamID), juceParam);
 
                 // is this a meter?
@@ -1465,7 +1474,7 @@ namespace AAXClasses
 
                 parameter->AddShortenedName (juceParam->getName (4).toRawUTF8());
 
-                auto parameterNumSteps = juceParam->getNumSteps();
+                auto parameterNumSteps = getSafeNumberOfParameterSteps (*juceParam);
                 parameter->SetNumberOfSteps ((uint32_t) parameterNumSteps);
 
                #if JUCE_FORCE_LEGACY_PARAMETER_AUTOMATION_TYPE
@@ -1607,6 +1616,9 @@ namespace AAXClasses
                 audioProcessor.prepareToPlay (sampleRate, lastBufferSize);
                 maxBufferSize = lastBufferSize;
 
+                midiBuffer.ensureSize (2048);
+                midiBuffer.clear();
+
                 sideChainBuffer.calloc (static_cast<size_t> (maxBufferSize));
             }
 
@@ -1705,6 +1717,103 @@ namespace AAXClasses
         }
 
         //==============================================================================
+        static AudioProcessor::CurveData::Type aaxCurveTypeToJUCE (AAX_CTypeID type) noexcept
+        {
+            switch (type)
+            {
+            case AAX_eCurveType_EQ:              return AudioProcessor::CurveData::Type::EQ;
+            case AAX_eCurveType_Dynamics:        return AudioProcessor::CurveData::Type::Dynamics;
+            case AAX_eCurveType_Reduction:       return AudioProcessor::CurveData::Type::GainReduction;
+            default:  break;
+            }
+
+            return AudioProcessor::CurveData::Type::Unknown;
+        }
+
+        uint32_t getAAXMeterIdForParamId (const String& paramID) const noexcept
+        {
+            int idx;
+
+            for (idx = 0; idx < aaxMeters.size(); ++idx)
+                if (LegacyAudioParameter::getParamID (aaxMeters[idx], false) == paramID)
+                    break;
+
+            // you sepecified a parameter id in your curve but the parameter does not have the meter
+            // category
+            jassert (idx < aaxMeters.size());
+            return 'Metr' + static_cast<AAX_CTypeID> (idx);
+        }
+
+        //==============================================================================
+        AAX_Result GetCurveData (AAX_CTypeID iCurveType, const float * iValues, uint32_t iNumValues, float * oValues ) const override
+        {
+            auto curveType = aaxCurveTypeToJUCE (iCurveType);
+
+            if (curveType != AudioProcessor::CurveData::Type::Unknown)
+            {
+                auto& audioProcessor = getPluginInstance();
+                auto curve = audioProcessor.getResponseCurve (curveType);
+
+                if (curve.curve)
+                {
+                    if (oValues != nullptr && iValues != nullptr)
+                    {
+                        for (uint32_t i = 0; i < iNumValues; ++i)
+                            oValues[i] = curve.curve (iValues[i]);
+                    }
+
+                    return AAX_SUCCESS;
+                }
+            }
+
+            return AAX_ERROR_UNIMPLEMENTED;
+        }
+
+        AAX_Result GetCurveDataMeterIds (AAX_CTypeID iCurveType, uint32_t *oXMeterId, uint32_t *oYMeterId)  const override
+        {
+            auto curveType = aaxCurveTypeToJUCE (iCurveType);
+
+            if (curveType != AudioProcessor::CurveData::Type::Unknown)
+            {
+                auto& audioProcessor = getPluginInstance();
+                auto curve = audioProcessor.getResponseCurve (curveType);
+
+                if (curve.curve && curve.xMeterID.isNotEmpty() && curve.yMeterID.isNotEmpty())
+                {
+                    if (oXMeterId != nullptr) *oXMeterId = getAAXMeterIdForParamId (curve.xMeterID);
+                    if (oYMeterId != nullptr) *oYMeterId = getAAXMeterIdForParamId (curve.yMeterID);
+
+                    return AAX_SUCCESS;
+                }
+            }
+
+            return AAX_ERROR_UNIMPLEMENTED;
+        }
+
+        AAX_Result GetCurveDataDisplayRange (AAX_CTypeID iCurveType, float *oXMin, float *oXMax, float *oYMin, float *oYMax) const override
+        {
+            auto curveType = aaxCurveTypeToJUCE (iCurveType);
+
+            if (curveType != AudioProcessor::CurveData::Type::Unknown)
+            {
+                auto& audioProcessor = getPluginInstance();
+                auto curve = audioProcessor.getResponseCurve (curveType);
+
+                if (curve.curve)
+                {
+                    if (oXMin != nullptr) *oXMin = curve.xRange.getStart();
+                    if (oXMax != nullptr) *oXMax = curve.xRange.getEnd();
+                    if (oYMin != nullptr) *oYMin = curve.yRange.getStart();
+                    if (oYMax != nullptr) *oYMax = curve.yRange.getEnd();
+
+                    return AAX_SUCCESS;
+                }
+            }
+
+            return AAX_ERROR_UNIMPLEMENTED;
+        }
+
+        //==============================================================================
         inline int getParamIndexFromID (AAX_CParamID paramID) const noexcept
         {
             if (auto* param = getParameterFromID (paramID))
@@ -1792,7 +1901,7 @@ namespace AAXClasses
         // and the size of the data returned. To avoid generating
         // it again in GetChunk, we need to store it somewhere.
         // However, as GetChunkSize and GetChunk can be called
-        // on different threads, we store it in thread dependant storage
+        // on different threads, we store it in thread dependent storage
         // in a hash map with the thread id as a key.
         mutable ThreadLocalValue<ChunkMemoryBlock> perThreadFilterData;
         CriticalSection perThreadDataLock;
@@ -1997,11 +2106,17 @@ namespace AAXClasses
             check (desc.AddSideChainIn (JUCEAlgorithmIDs::sideChainBuffers));
             properties->AddProperty (AAX_eProperty_SupportsSideChainInput, true);
         }
+        else
+        {
+            // AAX does not allow there to be any gaps in the fields of the algorithm context structure
+            // so just add a dummy one here if there aren't any side chains
+            check (desc.AddPrivateData (JUCEAlgorithmIDs::sideChainBuffers, sizeof (uintptr_t)));
+        }
 
         auto maxAuxBuses = jmax (0, jmin (15, fullLayout.outputBuses.size() - 1));
 
         // add the output buses
-        // This is incrdibly dumb: the output bus format must be well defined
+        // This is incredibly dumb: the output bus format must be well defined
         // for every main bus in/out format pair. This means that there cannot
         // be two configurations with different aux formats but
         // identical main bus in/out formats.
